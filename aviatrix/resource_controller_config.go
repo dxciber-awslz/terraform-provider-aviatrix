@@ -88,6 +88,7 @@ func resourceControllerConfigUpdate(d *schema.ResourceData, meta interface{}) er
 	    d.SetPartial("http_access")
 	}
 	d.Partial(false)
+	return nil
 }
 
 // Returns to default controller configuration
