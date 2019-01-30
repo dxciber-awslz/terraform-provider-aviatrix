@@ -26,6 +26,7 @@ func (c *Client) EnableHttpAccess() error {
 		return err
 	}
 	if !data.Return {
+		log.Printf("[ERROR] Error invoking controller %s",data.Reason)
 		return errors.New(data.Reason)
 	}
 	return nil
@@ -43,6 +44,7 @@ func (c *Client) DisableHttpAccess() error {
 		return err
 	}
 	if !data.Return {
+		log.Printf("[ERROR] Error invoking controller %s",data.Reason)
 		return errors.New(data.Reason)
 	}
 	return nil
@@ -60,6 +62,7 @@ func (c *Client) GetHttpAccessEnabled() (string,error) {
 		return "",err
 	}
 	if !data.Return {
+		log.Printf("[ERROR] Error invoking controller %s",data.Reason)
 		return "",errors.New(data.Reason)
 	}
 	result := data.Result
