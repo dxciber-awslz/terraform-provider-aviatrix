@@ -41,7 +41,7 @@ func resourceControllerConfigCreate(d *schema.ResourceData, meta interface{}) er
 		return fmt.Errorf("failed to configure controller http access: %s", err)
 	}
 	d.SetId(strings.Replace(client.ControllerIP, ".", "-", -1))
-	return resourceAccountRead(d, meta)
+	return d
 }
 
 func resourceControllerConfigRead(d *schema.ResourceData, meta interface{}) error {
@@ -68,7 +68,7 @@ func resourceControllerConfigRead(d *schema.ResourceData, meta interface{}) erro
 func resourceControllerConfigUpdate(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*goaviatrix.Client)
 
-	log.Printf("[INFO] Updating Controller configuration: %#v", account)
+	log.Printf("[INFO] Updating Controller configuration: %#v", d)
 	d.Partial(true)
 	
 	if d.HasChange("http_access") {
