@@ -5,7 +5,7 @@ PKG_NAME=aviatrix
 
 default: build
 
-build: 
+build: fmtcheck
 	go install
 
 test: fmtcheck
