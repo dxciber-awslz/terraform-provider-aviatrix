@@ -41,7 +41,7 @@ func resourceControllerConfigCreate(d *schema.ResourceData, meta interface{}) er
 		return fmt.Errorf("failed to configure controller http access: %s", err)
 	}
 	d.SetId(strings.Replace(client.ControllerIP, ".", "-", -1))
-	return d
+	return nil
 }
 
 func resourceControllerConfigRead(d *schema.ResourceData, meta interface{}) error {
