@@ -6,7 +6,7 @@ import (
 	"log"
 	"strings"
 
-	"github.com/dxciberaws/go-aviatrix/goaviatrix"
+	"github.com/dxciber-awslz/go-aviatrix/goaviatrix"
 	"github.com/hashicorp/terraform/helper/schema"
 )
 
