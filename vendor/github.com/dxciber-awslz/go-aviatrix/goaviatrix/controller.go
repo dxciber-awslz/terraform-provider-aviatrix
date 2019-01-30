@@ -11,6 +11,7 @@ import (
 type ControllerHttpAccessResp struct {
 	Return bool   `json:"return"`
 	Result string `json:"result"`
+	Reason  string        `json:"reason"`
 }
 
 func (c *Client) EnableHttpAccess() error {
