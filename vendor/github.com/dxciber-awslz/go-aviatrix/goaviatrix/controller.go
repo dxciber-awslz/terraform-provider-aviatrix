@@ -52,14 +52,14 @@ func (c *Client) GetHttpAccessEnabled() (string,error) {
 	path := c.baseURL + fmt.Sprintf(url, c.CID)
 	resp, err := c.Get(c.baseURL, nil)
 	if err != nil {
-		return nil,err
+		return "",err
 	}
 	var data ControllerHttpAccessResp
 	if err = json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil,err
+		return "",err
 	}
 	if !data.Return {
-		return nil,errors.New(data.Reason)
+		return "",errors.New(data.Reason)
 	}
 	result := data.Result
 	return result,nil
