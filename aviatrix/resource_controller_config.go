@@ -5,7 +5,7 @@ import (
 	"log"
 	"strings"
 
-	"github.com/dxciber-awslz/go-aviatrix/goaviatrix"
+	"github.com/AviatrixSystems/go-aviatrix/goaviatrix"
 	"github.com/hashicorp/terraform/helper/schema"
 )
 
