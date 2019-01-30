@@ -1,7 +1,6 @@
 package aviatrix
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"strings"
@@ -27,9 +26,11 @@ func resourceControllerConfig() *schema.Resource {
 }
 
 func resourceControllerConfigCreate(d *schema.ResourceData, meta interface{}) error {
+	var err error
+	
 	client := meta.(*goaviatrix.Client)
 
-	log.Printf("[INFO] Configuring Aviatrix controller : %#v", account)
+	log.Printf("[INFO] Configuring Aviatrix controller : %#v", d)
 
     if http_access := d.Get("http_access").(string); http_access == "enabled" {
     	err := client.EnableHttpAccess()
@@ -39,7 +40,7 @@ func resourceControllerConfigCreate(d *schema.ResourceData, meta interface{}) er
 	if err != nil {
 		return fmt.Errorf("failed to configure controller http access: %s", err)
 	}
-	d.SetId(strings.Replace(c.ControllerIP, ".", "-", -1))
+	d.SetId(strings.Replace(client.ControllerIP, ".", "-", -1))
 	return resourceAccountRead(d, meta)
 }
 
@@ -47,7 +48,7 @@ func resourceControllerConfigRead(d *schema.ResourceData, meta interface{}) erro
 	client := meta.(*goaviatrix.Client)
 	
 	log.Printf("[INFO] Getting controller %s configuration", d.Id())
-	result, err := c.GetHttpAccessEnabled()
+	result, err := client.GetHttpAccessEnabled()
 	if err != nil {
 		if err == goaviatrix.ErrNotFound {
 			d.SetId("")
@@ -60,7 +61,7 @@ func resourceControllerConfigRead(d *schema.ResourceData, meta interface{}) erro
 	} else {
 		d.Set("http_access","disabled");
 	}
-	d.SetId(strings.Replace(c.ControllerIP, ".", "-", -1))
+	d.SetId(strings.Replace(client.ControllerIP, ".", "-", -1))
 	return nil
 }
 
