@@ -33,9 +33,9 @@ func resourceControllerConfigCreate(d *schema.ResourceData, meta interface{}) er
 	log.Printf("[INFO] Configuring Aviatrix controller : %#v", d)
 
     if http_access := d.Get("http_access").(string); http_access == "enabled" {
-    	err := client.EnableHttpAccess()
+    	err = client.EnableHttpAccess()
     } else {
-    	err := client.DisableHttpAccess()
+    	err = client.DisableHttpAccess()
     }
 	if err != nil {
 		return fmt.Errorf("failed to configure controller http access: %s", err)
