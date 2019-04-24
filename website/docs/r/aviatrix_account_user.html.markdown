@@ -15,10 +15,10 @@ The AccountUser resource allows the creation and management of Aviatrix User Acc
 ```hcl
 # Create Aviatrix User Account
 resource "aviatrix_account_user" "test_accountuser" {
-  username = "username1"
+  username     = "username1"
   account_name = "test-accountname"
-  email = "username1@testdomain.com"
-  password = "passwordforuser1-1234"
+  email        = "username1@testdomain.com"
+  password     = "passwordforuser1-1234"
 }
 ```
 
@@ -28,11 +28,13 @@ The following arguments are supported for creating user account:
 
 * `username` - (Required) Name of account user to be created.
 * `account_name` - (Required) Cloud account name of user to be created.
-* `email` - (Optional) Email of address of account user to be created.
-* `password` - (Optional) Login password for the account user to be created.
+* `email` - (Required) Email of address of account user to be created.
+* `password` - (Required) Login password for the account user to be created. If password is changed, current account will be destroyed and a new account will be created.
 
-The following arguments are supported for editing user account:
+## Import
 
-* `what` - (Optional) Type of change, indicating what info of user to be changed. Valid values: "account_name", "email", "password"
-* `old_password` - (Optional) (Required, when what is "password")
-* `new_password` - (Optional) (Required, when what is "password")
+Instance account_user can be imported using the username (when doing import, needs to leave password argument blank), e.g.
+
+```
+$ terraform import aviatrix_account_user.test username
+```

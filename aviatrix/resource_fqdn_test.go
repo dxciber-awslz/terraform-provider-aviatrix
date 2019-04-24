@@ -5,10 +5,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/AviatrixSystems/go-aviatrix/goaviatrix"
 	"github.com/hashicorp/terraform/helper/acctest"
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/terraform"
+	"github.com/terraform-providers/terraform-provider-aviatrix/goaviatrix"
 )
 
 func TestAccFQDN_basic(t *testing.T) {
@@ -22,6 +22,8 @@ func TestAccFQDN_basic(t *testing.T) {
 
 	preGatewayCheck(t, ". Set SKIP_FQDN to yes to skip FQDN tests")
 
+	resourceName := "aviatrix_fqdn.foo"
+
 	resource.Test(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t) },
 		Providers:    testAccProviders,
@@ -30,19 +32,17 @@ func TestAccFQDN_basic(t *testing.T) {
 			{
 				Config: testAccFQDNConfigBasic(rName),
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckFQDNExists("aviatrix_fqdn.foo", &fqdn),
-					resource.TestCheckResourceAttr("aviatrix_fqdn.foo", "fqdn_tag",
-						fmt.Sprintf("tff-%s", rName)),
-					resource.TestCheckResourceAttr("aviatrix_fqdn.foo", "fqdn_status", "enabled"),
-					resource.TestCheckResourceAttr("aviatrix_fqdn.foo", "fqdn_mode", "white"),
-					resource.TestCheckResourceAttr("aviatrix_fqdn.foo", "gw_list.#", "1"),
-					resource.TestCheckResourceAttr("aviatrix_fqdn.foo", "gw_list.0",
+					testAccCheckFQDNExists(resourceName, &fqdn),
+					resource.TestCheckResourceAttr(resourceName, "fqdn_tag", fmt.Sprintf("tff-%s", rName)),
+					resource.TestCheckResourceAttr(resourceName, "fqdn_status", "enabled"),
+					resource.TestCheckResourceAttr(resourceName, "fqdn_mode", "white"),
+					resource.TestCheckResourceAttr(resourceName, "gw_filter_tag_list.#", "1"),
+					resource.TestCheckResourceAttr(resourceName, "gw_filter_tag_list.0.gw_name",
 						fmt.Sprintf("tfg-%s", rName)),
-					resource.TestCheckResourceAttr("aviatrix_fqdn.foo", "domain_names.#", "1"),
-					resource.TestCheckResourceAttr("aviatrix_fqdn.foo", "domain_names.0.fqdn",
-						"facebook.com"),
-					resource.TestCheckResourceAttr("aviatrix_fqdn.foo", "domain_names.0.proto", "tcp"),
-					resource.TestCheckResourceAttr("aviatrix_fqdn.foo", "domain_names.0.port", "443"),
+					resource.TestCheckResourceAttr(resourceName, "domain_names.#", "1"),
+					resource.TestCheckResourceAttr(resourceName, "domain_names.0.fqdn", "facebook.com"),
+					resource.TestCheckResourceAttr(resourceName, "domain_names.0.proto", "tcp"),
+					resource.TestCheckResourceAttr(resourceName, "domain_names.0.port", "443"),
 				),
 			},
 		},
@@ -53,12 +53,12 @@ func testAccFQDNConfigBasic(rName string) string {
 	return fmt.Sprintf(`
 
 resource "aviatrix_account" "test" {
-  account_name = "tfa-%s"
-  cloud_type = 1
-  aws_account_number = "%s"
-  aws_iam = "false"
-  aws_access_key = "%s"
-  aws_secret_key = "%s"
+    account_name = "tfa-%s"
+	cloud_type = 1
+	aws_account_number = "%s"
+	aws_iam = "false"
+	aws_access_key = "%s"
+	aws_secret_key = "%s"
 }
 
 resource "aviatrix_gateway" "test" {
@@ -69,20 +69,26 @@ resource "aviatrix_gateway" "test" {
 	vpc_reg = "%[6]s"
 	vpc_size = "t2.micro"
 	vpc_net = "%[7]s"
+    enable_nat = "yes"
 }
 
 resource "aviatrix_fqdn" "foo" {
-  fqdn_tag = "tff-%[1]s"
-  fqdn_status = "enabled"
-  fqdn_mode = "white"
-  gw_list = ["${aviatrix_gateway.test.gw_name}"]
-  domain_names =  [
-      {
-                fqdn = "facebook.com"
-                proto = "tcp"
-                port = "443"
-          }
-        ]
+	fqdn_tag = "tff-%[1]s"
+	fqdn_status = "enabled"
+	fqdn_mode = "white"
+	gw_filter_tag_list = [
+	{
+		gw_name = "${aviatrix_gateway.test.gw_name}"
+		source_ip_list = []
+	}
+	]
+	domain_names =  [
+	{
+		fqdn = "facebook.com"
+		proto = "tcp"
+		port = "443"
+	}
+	]
 }
 `, rName, os.Getenv("AWS_ACCOUNT_NUMBER"), os.Getenv("AWS_ACCESS_KEY"), os.Getenv("AWS_SECRET_KEY"),
 		os.Getenv("AWS_VPC_ID"), os.Getenv("AWS_REGION"), os.Getenv("AWS_VPC_NET"))

@@ -15,8 +15,8 @@ Use this data source to get the Aviatrix gateway for use in other resources.
 ```hcl
 # Create Aviatrix gateway data source
 data "aviatrix_gateway" "foo" {
-	account_name = "username"
-	gw_name      = "gatewayname"
+  account_name = "username"
+  gw_name      = "gatewayname"
 }
 ```
 
@@ -25,14 +25,19 @@ data "aviatrix_gateway" "foo" {
 The following arguments are supported:
 
 * `account_name` - (Optional) Account name. This can be used for logging in to CloudN console or UserConnect controller.
-* `gw_name`      - (Required) Gateway name. This can be used for getting gateway.
+* `gw_name` - (Required) Gateway name. This can be used for getting gateway.
 
 ## Attribute Reference
 
-* `cloud_type`   - Type of cloud service provider. (Only AWS is supported currently. Value of 1 for AWS.)
 * `account_name` - Aviatrix account name.
-* `gw_name`      - Aviatrix gateway name.
-* `vpc_id`       - AWS VPC ID.
-* `vpc_reg`      - AWS VPC Region. 
-* `vpc_size`     - Instance type.
+* `gw_name` - Aviatrix gateway name.
+
+
+## The following arguments are computed - please do not edit in the resource file:
+
+* `cloud_type` - Type of cloud service provider. (Only AWS is supported currently. Value of 1 for AWS.)
+* `vpc_id` - AWS VPC ID.
+* `vpc_reg` - AWS VPC Region. 
+* `vpc_size` - Instance type.
+* `public_ip` - Public IP address of the Gateway created
  

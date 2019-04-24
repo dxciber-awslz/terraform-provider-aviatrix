@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/AviatrixSystems/go-aviatrix/goaviatrix"
 	"github.com/hashicorp/terraform/helper/schema"
+	"github.com/terraform-providers/terraform-provider-aviatrix/goaviatrix"
 )
 
 func resourceAWSTgw() *schema.Resource {
@@ -14,69 +14,89 @@ func resourceAWSTgw() *schema.Resource {
 		Read:   resourceAWSTgwRead,
 		Update: resourceAWSTgwUpdate,
 		Delete: resourceAWSTgwDelete,
+		Importer: &schema.ResourceImporter{
+			State: schema.ImportStatePassthrough,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"tgw_name": {
-				Type:     schema.TypeString,
-				Required: true,
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "Name of the AWS TGW which is going to be created.",
 			},
 			"account_name": {
-				Type:     schema.TypeString,
-				Required: true,
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "This parameter represents the name of a Cloud-Account in Aviatrix controller.",
 			},
 			"region": {
-				Type:     schema.TypeString,
-				Required: true,
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "Region of cloud provider.",
 			},
 			"aws_side_as_number": {
-				Type:     schema.TypeString,
-				Required: true,
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "BGP Local ASN (Autonomous System Number), Integer between 1-65535.",
 			},
 			"attached_aviatrix_transit_gateway": {
 				Type: schema.TypeList,
 				Elem: &schema.Schema{
 					Type: schema.TypeString,
 				},
-				Optional: true,
+				Optional:    true,
+				Description: "A list of Names of Aviatrix Transit Gateway to attach to one of the three default domains.",
 			},
 			"security_domains": {
-				Type:     schema.TypeList,
-				Required: true,
+				Type:        schema.TypeList,
+				Required:    true,
+				Description: "Security Domains to create together with AWS TGW's creation.",
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"security_domain_name": {
-							Type:     schema.TypeString,
-							Required: true,
+							Type:        schema.TypeString,
+							Required:    true,
+							Description: "Name of the security domain created.",
 						},
 						"connected_domains": {
 							Type: schema.TypeList,
 							Elem: &schema.Schema{
 								Type: schema.TypeString,
 							},
-							Optional: true,
+							Optional:    true,
+							Description: "A list of domains connected to the domain.",
 						},
 						"attached_vpc": {
-							Type:     schema.TypeList,
-							Optional: true,
+							Type:        schema.TypeList,
+							Optional:    true,
+							Description: "A list of VPCs attached to the domain.",
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
 									"vpc_region": {
-										Type:     schema.TypeString,
-										Optional: true,
+										Type:        schema.TypeString,
+										Optional:    true,
+										Description: "Region of the vpc.",
 									},
 									"vpc_account_name": {
-										Type:     schema.TypeString,
-										Optional: true,
+										Type:        schema.TypeString,
+										Optional:    true,
+										Description: "The name of a Cloud-Account in Aviatrix controller associated with this VPC.",
 									},
 									"vpc_id": {
-										Type:     schema.TypeString,
-										Optional: true,
+										Type:        schema.TypeString,
+										Optional:    true,
+										Description: "This parameter represents the ID of the VPC.",
 									},
 								},
 							},
 						},
 					},
 				},
+			},
+			"manage_vpc_attachment": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  true,
 			},
 		},
 	}
@@ -94,6 +114,21 @@ func resourceAWSTgwCreate(d *schema.ResourceData, meta interface{}) error {
 		SecurityDomains:           make([]goaviatrix.SecurityDomainRule, 0),
 	}
 
+	manageVpcAttachment := d.Get("manage_vpc_attachment").(bool)
+
+	if awsTgw.Name == "" {
+		return fmt.Errorf("tgw name can't be empty string")
+	}
+	if awsTgw.AccountName == "" {
+		return fmt.Errorf("account name can't be empty string")
+	}
+	if awsTgw.Region == "" {
+		return fmt.Errorf("tgw region can't be empty string")
+	}
+	if awsTgw.AwsSideAsNumber == "" {
+		return fmt.Errorf("aws side number can't be empty string")
+	}
+
 	log.Printf("[INFO] Creating AWS TGW")
 
 	var domainsAll []string
@@ -102,7 +137,6 @@ func resourceAWSTgwCreate(d *schema.ResourceData, meta interface{}) error {
 	var attachedVPCAll [][]string
 
 	domains := d.Get("security_domains").([]interface{})
-
 	for _, domain := range domains {
 
 		dn := domain.(map[string]interface{})
@@ -121,6 +155,10 @@ func resourceAWSTgwCreate(d *schema.ResourceData, meta interface{}) error {
 		for _, attachedVPCs := range dn["attached_vpc"].([]interface{}) {
 
 			attachedVPC := attachedVPCs.(map[string]interface{})
+
+			if !manageVpcAttachment && attachedVPC != nil {
+				return fmt.Errorf("manage_vpc_attachment is set to false. 'attached_vpc' should be empty")
+			}
 
 			if dn["security_domain_name"].(string) == "Aviatrix_Edge_Domain" && attachedVPC != nil {
 				return fmt.Errorf("validation of source file failed: no VPCs should be attached to 'Aviatrix_Edge_Domain'")
@@ -156,6 +194,11 @@ func resourceAWSTgwCreate(d *schema.ResourceData, meta interface{}) error {
 		awsTgw.SecurityDomains = append(awsTgw.SecurityDomains, securityDomainRule)
 	}
 
+	defaultDomainsWithCreation := []string{"Aviatrix_Edge_Domain", "Default_Domain", "Shared_Service_Domain"}
+	if len(goaviatrix.Difference(defaultDomainsWithCreation, domainsAll)) != 0 {
+		return fmt.Errorf("one or more of the three default domains are missing")
+	}
+
 	attachedGWs := d.Get("attached_aviatrix_transit_gateway").([]interface{})
 	for _, attachedGW := range attachedGWs {
 		attachedGWAll = append(attachedGWAll, attachedGW.(string))
@@ -181,7 +224,6 @@ func resourceAWSTgwCreate(d *schema.ResourceData, meta interface{}) error {
 	if err1 != nil {
 		return fmt.Errorf("failed to create AWS TGW: %s", err1)
 	}
-
 	d.SetId(awsTgw.Name)
 
 	for i := range domainsToCreate {
@@ -191,7 +233,6 @@ func resourceAWSTgwCreate(d *schema.ResourceData, meta interface{}) error {
 			Region:      d.Get("region").(string),
 			AwsTgwName:  d.Get("tgw_name").(string),
 		}
-
 		err := client.CreateSecurityDomain(securityDomain)
 		if err != nil {
 			resourceAWSTgwRead(d, meta)
@@ -237,7 +278,6 @@ func resourceAWSTgwCreate(d *schema.ResourceData, meta interface{}) error {
 				AccountName: attachedVPCAll[i][2],
 				VpcID:       attachedVPCAll[i][1],
 			}
-
 			err := client.AttachVpcToAWSTgw(awsTgw, vpcSolo, attachedVPCAll[i][0])
 			if err != nil {
 				resourceAWSTgwRead(d, meta)
@@ -251,51 +291,62 @@ func resourceAWSTgwCreate(d *schema.ResourceData, meta interface{}) error {
 
 func resourceAWSTgwRead(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*goaviatrix.Client)
-	awsTgw := &goaviatrix.AWSTgw{
-		Name:            d.Get("tgw_name").(string),
-		AccountName:     d.Get("account_name").(string),
-		Region:          d.Get("region").(string),
-		AwsSideAsNumber: d.Get("aws_side_as_number").(string),
+
+	tgwName := d.Get("tgw_name").(string)
+	if tgwName == "" {
+		id := d.Id()
+		log.Printf("[DEBUG] Looks like an import, no aws tgw name received. Import Id is %s", id)
+		d.Set("tgw_name", id)
+		d.Set("manage_vpc_attachment", true)
+		d.SetId(id)
 	}
 
-	log.Printf("[INFO] Reading AWS TGW")
-
-	awsTgw, err := client.GetAWSTgw(awsTgw)
+	awsTgw := &goaviatrix.AWSTgw{
+		Name: d.Get("tgw_name").(string),
+	}
+	awsTgw, err := client.ListTgwDetails(awsTgw)
 	if err != nil {
 		return fmt.Errorf("couldn't find AWS TGW: %s", awsTgw.Name)
 	}
-
 	d.Set("account_name", awsTgw.AccountName)
 	d.Set("tgw_name", awsTgw.Name)
 	d.Set("region", awsTgw.Region)
+
+	log.Printf("[INFO] Reading AWS TGW")
+
+	awsTgw, err2 := client.GetAWSTgw(awsTgw)
+	if err2 != nil {
+		return fmt.Errorf("couldn't find AWS TGW: %s", awsTgw.Name)
+	}
 	d.Set("aws_side_as_number", awsTgw.AwsSideAsNumber)
 	d.Set("attached_aviatrix_transit_gateway", awsTgw.AttachedAviatrixTransitGW)
 
-	mSecurityDomain := make(map[string]map[string]interface{})
+	manageVpcAttachment := d.Get("manage_vpc_attachment").(bool)
 
+	mSecurityDomain := make(map[string]map[string]interface{})
 	for _, sd := range awsTgw.SecurityDomains {
 		sdr := make(map[string]interface{})
 		sdr["security_domain_name"] = sd.Name
 		sdr["connected_domains"] = sd.ConnectedDomain
 
-		var aVPCs []interface{}
-		for _, attachedVPC := range sd.AttachedVPCs {
-			vpcSolo := make(map[string]interface{})
-			vpcSolo["vpc_region"] = attachedVPC.Region
-			vpcSolo["vpc_account_name"] = attachedVPC.AccountName
-			vpcSolo["vpc_id"] = attachedVPC.VpcID
-			aVPCs = append(aVPCs, vpcSolo)
+		if manageVpcAttachment {
+			var aVPCs []interface{}
+			for _, attachedVPC := range sd.AttachedVPCs {
+				vpcSolo := make(map[string]interface{})
+				vpcSolo["vpc_region"] = attachedVPC.Region
+				vpcSolo["vpc_account_name"] = attachedVPC.AccountName
+				vpcSolo["vpc_id"] = attachedVPC.VpcID
+				aVPCs = append(aVPCs, vpcSolo)
+			}
+			sdr["attached_vpc"] = aVPCs
 		}
-		sdr["attached_vpc"] = aVPCs
 
 		mSecurityDomain[sd.Name] = sdr
 	}
 
 	var securityDomains []map[string]interface{}
 	domains := d.Get("security_domains").([]interface{})
-
 	mOld := make(map[string]bool)
-
 	for _, domain := range domains {
 		dn := domain.(map[string]interface{})
 
@@ -326,30 +377,38 @@ func resourceAWSTgwRead(d *schema.ResourceData, meta interface{}) error {
 
 			mSecurityDomain[dn["security_domain_name"].(string)]["connected_domains"] = aDmNew
 
-			mVPC := make(map[string]bool)
-			var aVPCNew []map[string]interface{}
+			if manageVpcAttachment {
+				mVPC := make(map[string]bool)
+				var aVPCNew []map[string]interface{}
 
-			for _, attachedVPCs := range mSecurityDomain[dn["security_domain_name"].(string)]["attached_vpc"].([]interface{}) {
-				attachedVPC := attachedVPCs.(map[string]interface{})
-				mVPC[attachedVPC["vpc_id"].(string)] = true
-			}
-
-			for _, attachedVPCs := range dn["attached_vpc"].([]interface{}) {
-				attachedVPC := attachedVPCs.(map[string]interface{})
-				if mVPC[attachedVPC["vpc_id"].(string)] {
-					aVPCNew = append(aVPCNew, attachedVPC)
-					mVPC[attachedVPC["vpc_id"].(string)] = false
+				for _, attachedVPCs := range mSecurityDomain[dn["security_domain_name"].(string)]["attached_vpc"].([]interface{}) {
+					attachedVPC := attachedVPCs.(map[string]interface{})
+					mVPC[attachedVPC["vpc_id"].(string)] = true
 				}
-			}
 
-			for _, attachedVPCs := range mSecurityDomain[dn["security_domain_name"].(string)]["attached_vpc"].([]interface{}) {
-				attachedVPC := attachedVPCs.(map[string]interface{})
-				if mVPC[attachedVPC["vpc_id"].(string)] {
-					aVPCNew = append(aVPCNew, attachedVPC)
+				for _, attachedVPCs := range dn["attached_vpc"].([]interface{}) {
+					attachedVPC := attachedVPCs.(map[string]interface{})
+					if mVPC[attachedVPC["vpc_id"].(string)] {
+						for _, attachedVPCsFromRefresh := range mSecurityDomain[dn["security_domain_name"].(string)]["attached_vpc"].([]interface{}) {
+							attachedVPCFromRefresh := attachedVPCsFromRefresh.(map[string]interface{})
+							if attachedVPCFromRefresh["vpc_id"] == attachedVPC["vpc_id"] {
+								attachedVPC["vpc_account_name"] = attachedVPCFromRefresh["vpc_account_name"]
+								attachedVPC["vpc_region"] = attachedVPCFromRefresh["vpc_region"]
+							}
+						}
+						aVPCNew = append(aVPCNew, attachedVPC)
+						mVPC[attachedVPC["vpc_id"].(string)] = false
+					}
 				}
-			}
 
-			mSecurityDomain[dn["security_domain_name"].(string)]["attached_vpc"] = aVPCNew
+				for _, attachedVPCs := range mSecurityDomain[dn["security_domain_name"].(string)]["attached_vpc"].([]interface{}) {
+					attachedVPC := attachedVPCs.(map[string]interface{})
+					if mVPC[attachedVPC["vpc_id"].(string)] {
+						aVPCNew = append(aVPCNew, attachedVPC)
+					}
+				}
+				mSecurityDomain[dn["security_domain_name"].(string)]["attached_vpc"] = aVPCNew
+			}
 
 			securityDomains = append(securityDomains, mSecurityDomain[dn["security_domain_name"].(string)])
 		}
@@ -360,7 +419,6 @@ func resourceAWSTgwRead(d *schema.ResourceData, meta interface{}) error {
 			securityDomains = append(securityDomains, mSecurityDomain[dn.Name])
 		}
 	}
-
 	d.Set("security_domains", securityDomains)
 
 	return nil
@@ -386,6 +444,31 @@ func resourceAWSTgwUpdate(d *schema.ResourceData, meta interface{}) error {
 	var toDetachVPCs [][]string
 
 	d.Partial(true)
+
+	if d.HasChange("tgw_name") {
+		return fmt.Errorf("updating tgw_name is not allowed")
+	}
+	if d.HasChange("account_name") {
+		return fmt.Errorf("updating account_name is not allowed")
+	}
+	if d.HasChange("region") {
+		return fmt.Errorf("updating region is not allowed")
+	}
+	if d.HasChange("aws_side_as_number") {
+		return fmt.Errorf("updating aws_side_as_number is not allowed")
+	}
+
+	manageVpcAttachment := d.Get("manage_vpc_attachment").(bool)
+
+	if d.HasChange("manage_vpc_attachment") {
+		_, nMVA := d.GetChange("manage_vpc_attachment")
+		newManageVpcAttachment := nMVA.(bool)
+		if newManageVpcAttachment {
+			d.Set("manage_vpc_attachment", true)
+		} else {
+			d.Set("manage_vpc_attachment", false)
+		}
+	}
 
 	mAttachedGWNew := make(map[string]int)
 
@@ -490,6 +573,10 @@ func resourceAWSTgwUpdate(d *schema.ResourceData, meta interface{}) error {
 
 				attachedVPC := attachedVPCs.(map[string]interface{})
 
+				if !manageVpcAttachment && attachedVPC != nil {
+					return fmt.Errorf("manage_vpc_attachment is set to false. 'attached_vpc' should be empty")
+				}
+
 				if dn["security_domain_name"].(string) == "Aviatrix_Edge_Domain" && attachedVPC != nil {
 					return fmt.Errorf("validation of source file failed: no VPCs should be attached to 'Aviatrix_Edge_Domain'")
 				}
@@ -559,7 +646,7 @@ func resourceAWSTgwUpdate(d *schema.ResourceData, meta interface{}) error {
 			GwName: toDetachGWs[i],
 		}
 
-		err := client.DetachAviatrixTransitGWToAWSTgw(awsTgw, gateway, "Aviatrix_Edge_Domain")
+		err := client.DetachAviatrixTransitGWFromAWSTgw(awsTgw, gateway, "Aviatrix_Edge_Domain")
 		if err != nil {
 			resourceAWSTgwRead(d, meta)
 			return fmt.Errorf("failed to detach transit GW: %s", err)
@@ -601,12 +688,14 @@ func resourceAWSTgwUpdate(d *schema.ResourceData, meta interface{}) error {
 		}
 	}
 
-	for i := range toDetachVPCs {
-		if len(toDetachVPCs[i]) == 4 {
-			err := client.DetachVpcFromAWSTgw(awsTgw, toDetachVPCs[i][1])
-			if err != nil {
-				resourceAWSTgwRead(d, meta)
-				return fmt.Errorf("failed to detach VPC: %s", err)
+	if manageVpcAttachment {
+		for i := range toDetachVPCs {
+			if len(toDetachVPCs[i]) == 4 {
+				err := client.DetachVpcFromAWSTgw(awsTgw, toDetachVPCs[i][1])
+				if err != nil {
+					resourceAWSTgwRead(d, meta)
+					return fmt.Errorf("failed to detach VPC: %s", err)
+				}
 			}
 		}
 	}
@@ -623,18 +712,23 @@ func resourceAWSTgwUpdate(d *schema.ResourceData, meta interface{}) error {
 		}
 	}
 
-	for i := range toAttachVPCs {
-		if len(toAttachVPCs[i]) == 4 {
-			vpcSolo := goaviatrix.VPCSolo{
-				Region:      toAttachVPCs[i][3],
-				AccountName: toAttachVPCs[i][2],
-				VpcID:       toAttachVPCs[i][1],
-			}
+	if manageVpcAttachment {
+		for i := range toAttachVPCs {
+			if len(toAttachVPCs[i]) == 4 {
+				vpcSolo := goaviatrix.VPCSolo{
+					Region:      toAttachVPCs[i][3],
+					AccountName: toAttachVPCs[i][2],
+					VpcID:       toAttachVPCs[i][1],
+				}
 
-			err := client.AttachVpcToAWSTgw(awsTgw, vpcSolo, toAttachVPCs[i][0])
-			if err != nil {
-				resourceAWSTgwRead(d, meta)
-				return fmt.Errorf("failed to attach VPC: %s", err)
+				res, _ := client.IsVpcAttachedToTgw(awsTgw, &vpcSolo)
+				if !res {
+					err := client.AttachVpcToAWSTgw(awsTgw, vpcSolo, toAttachVPCs[i][0])
+					if err != nil {
+						resourceAWSTgwRead(d, meta)
+						return fmt.Errorf("failed to attach VPC: %s", err)
+					}
+				}
 			}
 		}
 	}
@@ -655,8 +749,9 @@ func resourceAWSTgwUpdate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	d.Partial(false)
+	d.SetId(awsTgw.Name)
 
-	return nil
+	return resourceAWSTgwRead(d, meta)
 }
 
 func resourceAWSTgwDelete(d *schema.ResourceData, meta interface{}) error {
@@ -672,44 +767,43 @@ func resourceAWSTgwDelete(d *schema.ResourceData, meta interface{}) error {
 
 	log.Printf("[INFO] Deleting AWS TGW")
 
-	var attachedGWs []string
-	var attachedVPCs [][]string
+	manageVpcAttachment := d.Get("manage_vpc_attachment").(bool)
+	if manageVpcAttachment {
+		var attachedVPCs [][]string
+		domains := d.Get("security_domains").([]interface{})
+		for _, domain := range domains {
+			dn := domain.(map[string]interface{})
 
-	domains := d.Get("security_domains").([]interface{})
-	for _, domain := range domains {
-		dn := domain.(map[string]interface{})
+			for _, aVPCs := range dn["attached_vpc"].([]interface{}) {
+				aVPC := aVPCs.(map[string]interface{})
 
-		for _, aVPCs := range dn["attached_vpc"].([]interface{}) {
-			aVPC := aVPCs.(map[string]interface{})
-
-			temp := []string{dn["security_domain_name"].(string), aVPC["vpc_id"].(string),
-				aVPC["vpc_account_name"].(string), aVPC["vpc_region"].(string)}
-			attachedVPCs = append(attachedVPCs, temp)
+				temp := []string{dn["security_domain_name"].(string), aVPC["vpc_id"].(string),
+					aVPC["vpc_account_name"].(string), aVPC["vpc_region"].(string)}
+				attachedVPCs = append(attachedVPCs, temp)
+			}
 		}
-	}
-
-	for i := range attachedVPCs {
-		if len(attachedVPCs[i]) == 4 {
-			err := client.DetachVpcFromAWSTgw(awsTgw, attachedVPCs[i][1])
-			if err != nil {
-				resourceAWSTgwRead(d, meta)
-				return fmt.Errorf("failed to detach VPC: %s", err)
+		for i := range attachedVPCs {
+			if len(attachedVPCs[i]) == 4 {
+				err := client.DetachVpcFromAWSTgw(awsTgw, attachedVPCs[i][1])
+				if err != nil {
+					resourceAWSTgwRead(d, meta)
+					return fmt.Errorf("failed to detach VPC: %s", err)
+				}
 			}
 		}
 	}
 
+	var attachedGWs []string
 	transitGWs := d.Get("attached_aviatrix_transit_gateway").([]interface{})
-
 	for _, transitGW := range transitGWs {
 		attachedGWs = append(attachedGWs, transitGW.(string))
 	}
-
 	for i := range attachedGWs {
 		gateway := &goaviatrix.Gateway{
 			GwName: attachedGWs[i],
 		}
 
-		err := client.DetachAviatrixTransitGWToAWSTgw(awsTgw, gateway, "Aviatrix_Edge_Domain")
+		err := client.DetachAviatrixTransitGWFromAWSTgw(awsTgw, gateway, "Aviatrix_Edge_Domain")
 		if err != nil {
 			resourceAWSTgwRead(d, meta)
 			return fmt.Errorf("failed to detach transit GW: %s", err)

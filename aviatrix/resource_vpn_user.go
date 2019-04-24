@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/AviatrixSystems/go-aviatrix/goaviatrix"
 	"github.com/hashicorp/terraform/helper/schema"
+	"github.com/terraform-providers/terraform-provider-aviatrix/goaviatrix"
 )
 
 func resourceAviatrixVPNUser() *schema.Resource {
@@ -20,24 +20,31 @@ func resourceAviatrixVPNUser() *schema.Resource {
 
 		Schema: map[string]*schema.Schema{
 			"vpc_id": {
-				Type:     schema.TypeString,
-				Required: true,
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "VPC Id of Aviatrix VPN gateway.",
 			},
 			"gw_name": {
 				Type:     schema.TypeString,
 				Required: true,
+				Description: "If ELB is enabled, this will be the name of the ELB, " +
+					"else it will be the name of the Aviatrix VPN gateway.",
 			},
 			"user_name": {
-				Type:     schema.TypeString,
-				Required: true,
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "VPN user name.",
 			},
 			"user_email": {
-				Type:     schema.TypeString,
-				Optional: true,
+				Type:        schema.TypeString,
+				Optional:    true,
+				Description: "VPN User's email.",
 			},
 			"saml_endpoint": {
-				Type:     schema.TypeString,
-				Optional: true,
+				Type:        schema.TypeString,
+				Optional:    true,
+				Default:     "",
+				Description: "This is the name of the SAML endpoint to which the user is to be associated.",
 			},
 		},
 	}
@@ -52,7 +59,12 @@ func resourceAviatrixVPNUserCreate(d *schema.ResourceData, meta interface{}) err
 		UserEmail:    d.Get("user_email").(string),
 		SamlEndpoint: d.Get("saml_endpoint").(string),
 	}
-
+	if vpn_user.VpcID == "" {
+		return fmt.Errorf("invalid choice: vpc_id can't be empty")
+	}
+	if vpn_user.GwName == "" {
+		return fmt.Errorf("invalid choice: gw_name can't be empty")
+	}
 	log.Printf("[INFO] Creating Aviatrix VPN User: %#v", vpn_user)
 
 	err := client.CreateVPNUser(vpn_user)
@@ -60,7 +72,7 @@ func resourceAviatrixVPNUserCreate(d *schema.ResourceData, meta interface{}) err
 		return fmt.Errorf("failed to create Aviatrix VPNUser: %s", err)
 	}
 	d.SetId(vpn_user.UserName)
-	return nil
+	return resourceAviatrixVPNUserRead(d, meta)
 }
 
 func resourceAviatrixVPNUserRead(d *schema.ResourceData, meta interface{}) error {
@@ -92,9 +104,7 @@ func resourceAviatrixVPNUserRead(d *schema.ResourceData, meta interface{}) error
 		if vu.UserEmail != "" {
 			d.Set("user_email", vu.UserEmail)
 		}
-		if vu.SamlEndpoint != "" {
-			d.Set("saml_endpoint", vu.SamlEndpoint)
-		}
+		d.Set("saml_endpoint", vu.SamlEndpoint)
 	}
 	return nil
 }

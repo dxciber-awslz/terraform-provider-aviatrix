@@ -5,8 +5,8 @@ import (
 	"log"
 	"strings"
 
-	"github.com/AviatrixSystems/go-aviatrix/goaviatrix"
 	"github.com/hashicorp/terraform/helper/schema"
+	"github.com/terraform-providers/terraform-provider-aviatrix/goaviatrix"
 )
 
 func resourceAWSPeer() *schema.Resource {
@@ -15,41 +15,64 @@ func resourceAWSPeer() *schema.Resource {
 		Read:   resourceAWSPeerRead,
 		Update: resourceAWSPeerUpdate,
 		Delete: resourceAWSPeerDelete,
+		Importer: &schema.ResourceImporter{
+			State: schema.ImportStatePassthrough,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"account_name1": {
-				Type:     schema.TypeString,
-				Required: true,
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "This parameter represents the name of a Cloud-Account in Aviatrix controller.",
 			},
 			"account_name2": {
-				Type:     schema.TypeString,
-				Required: true,
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "This parameter represents the name of a Cloud-Account in Aviatrix controller.",
 			},
 			"vpc_id1": {
-				Type:     schema.TypeString,
-				Required: true,
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "VPC-ID/VNet-Name of cloud provider.",
 			},
 			"vpc_id2": {
-				Type:     schema.TypeString,
-				Required: true,
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "VPC-ID/VNet-Name of cloud provider.",
 			},
 			"vpc_reg1": {
-				Type:     schema.TypeString,
-				Required: true,
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "Region of cloud provider.",
 			},
 			"vpc_reg2": {
-				Type:     schema.TypeString,
-				Required: true,
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "Region of cloud provider.",
 			},
 			"rtb_list1": {
-				Type:     schema.TypeList,
-				Elem:     &schema.Schema{Type: schema.TypeString},
-				Optional: true,
+				Type:        schema.TypeList,
+				Elem:        &schema.Schema{Type: schema.TypeString},
+				Optional:    true,
+				Description: "List of Route table ID.",
+			},
+			"rtb_list1_output": {
+				Type:        schema.TypeList,
+				Elem:        &schema.Schema{Type: schema.TypeString},
+				Computed:    true,
+				Description: "List of route table ID of vpc_id1.",
 			},
 			"rtb_list2": {
-				Type:     schema.TypeList,
-				Elem:     &schema.Schema{Type: schema.TypeString},
-				Optional: true,
+				Type:        schema.TypeList,
+				Elem:        &schema.Schema{Type: schema.TypeString},
+				Optional:    true,
+				Description: "List of Route table ID.",
+			},
+			"rtb_list2_output": {
+				Type:        schema.TypeList,
+				Elem:        &schema.Schema{Type: schema.TypeString},
+				Computed:    true,
+				Description: "List of route table ID of vpc_id2.",
 			},
 		},
 	}
@@ -74,21 +97,33 @@ func resourceAWSPeerCreate(d *schema.ResourceData, meta interface{}) error {
 		awsPeer.RtbList2 = strings.Join(goaviatrix.ExpandStringList(d.Get("rtb_list2").([]interface{})), ",")
 	}
 	log.Printf("[INFO] Creating Aviatrix aws_peer: %#v", awsPeer)
-	id, err := client.CreateAWSPeer(awsPeer)
+	_, err := client.CreateAWSPeer(awsPeer)
 	if err != nil {
 		return fmt.Errorf("failed to create Aviatrix AWSPeer: %s", err)
 	}
-	d.SetId(id)
-	return nil
-	//return resourceAWSPeerRead(d, meta)
+	d.SetId(awsPeer.VpcID1 + "~" + awsPeer.VpcID2)
+
+	return resourceAWSPeerRead(d, meta)
 }
 
 func resourceAWSPeerRead(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*goaviatrix.Client)
+
+	vpcID1 := d.Get("vpc_id1").(string)
+	vpcID2 := d.Get("vpc_id2").(string)
+	if vpcID1 == "" || vpcID2 == "" {
+		id := d.Id()
+		log.Printf("[DEBUG] Looks like an import, no vpc id received. Import Id is %s", id)
+		d.Set("vpc_id1", strings.Split(id, "~")[0])
+		d.Set("vpc_id2", strings.Split(id, "~")[1])
+		d.SetId(id)
+	}
+
 	awsPeer := &goaviatrix.AWSPeer{
 		VpcID1: d.Get("vpc_id1").(string),
 		VpcID2: d.Get("vpc_id2").(string),
 	}
+
 	ap, err := client.GetAWSPeer(awsPeer)
 	if err != nil {
 		if err == goaviatrix.ErrNotFound {
@@ -101,11 +136,21 @@ func resourceAWSPeerRead(d *schema.ResourceData, meta interface{}) error {
 	if ap != nil {
 		d.Set("vpc_id1", ap.VpcID1)
 		d.Set("vpc_id2", ap.VpcID2)
+		d.Set("account_name1", ap.AccountName1)
+		d.Set("account_name2", ap.AccountName2)
+		d.Set("vpc_reg1", ap.Region1)
+		d.Set("vpc_reg2", ap.Region2)
+		d.Set("rtb_list1_output", strings.Split(ap.RtbList1, ","))
+		d.Set("rtb_list2_output", strings.Split(ap.RtbList2, ","))
 	}
+
 	return nil
 }
 
 func resourceAWSPeerUpdate(d *schema.ResourceData, meta interface{}) error {
+	if d.HasChange("rtb_list1") || d.HasChange("rtb_list2") {
+		return nil
+	}
 	return fmt.Errorf("the AWSPeer resource cannot be updated. Delete and create new AWS peering")
 }
 

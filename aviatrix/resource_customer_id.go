@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/AviatrixSystems/go-aviatrix/goaviatrix"
 	"github.com/hashicorp/terraform/helper/schema"
+	"github.com/terraform-providers/terraform-provider-aviatrix/goaviatrix"
 )
 
 func resourceCustomerID() *schema.Resource {
@@ -14,11 +14,15 @@ func resourceCustomerID() *schema.Resource {
 		Read:   resourceCustomerIDRead,
 		Update: resourceCustomerIDUpdate,
 		Delete: resourceCustomerIDDelete,
+		Importer: &schema.ResourceImporter{
+			State: schema.ImportStatePassthrough,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"customer_id": {
-				Type:     schema.TypeString,
-				Required: true,
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "The license ID provided by Aviatrix Systems.",
 			},
 		},
 	}
@@ -28,7 +32,9 @@ func resourceCustomerIDCreate(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*goaviatrix.Client)
 	customerID := d.Get("customer_id").(string)
 	log.Printf("[INFO] Creating Aviatrix Customer ID: %s", customerID)
-
+	if customerID == "" {
+		return fmt.Errorf("customer id can't be empty")
+	}
 	_, err := client.SetCustomerID(customerID)
 	if err != nil {
 		return fmt.Errorf("failed to set Aviatrix Customer ID: %s", err)

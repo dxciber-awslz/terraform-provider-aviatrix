@@ -5,10 +5,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/AviatrixSystems/go-aviatrix/goaviatrix"
 	"github.com/hashicorp/terraform/helper/acctest"
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/terraform"
+	"github.com/terraform-providers/terraform-provider-aviatrix/goaviatrix"
 )
 
 func TestAccAviatrixVPNUser_basic(t *testing.T) {
@@ -52,12 +52,12 @@ func testAccVPNUserConfigBasic(rName string) string {
 
 
 resource "aviatrix_account" "test_account" {
-  account_name = "tfa-%s"
-  cloud_type = 1
-  aws_account_number = "%s"
-  aws_iam = "false"
-  aws_access_key = "%s"
-  aws_secret_key = "%s"
+    account_name = "tfa-%s"
+    cloud_type = 1
+    aws_account_number = "%s"
+    aws_iam = "false"
+    aws_access_key = "%s"
+    aws_secret_key = "%s"
 }
 
 resource "aviatrix_gateway" "test_gw" {
@@ -69,16 +69,16 @@ resource "aviatrix_gateway" "test_gw" {
 	vpc_size = "t2.micro"
 	vpc_net = "%s"
     vpn_access = "yes"
-    cidr = "192.168.43.0/24" 
+    vpn_cidr = "192.168.43.0/24" 
 	enable_elb = "yes"
 	elb_name = "tfl-%s"
 }
 
 resource "aviatrix_vpn_user" "test_vpn_user" {
-  vpc_id = "${aviatrix_gateway.test_gw.vpc_id}"
-  gw_name = "${aviatrix_gateway.test_gw.elb_name}"
-  user_name = "tfu-%s"
-  user_email = "user@xyz.com"
+    vpc_id = "${aviatrix_gateway.test_gw.vpc_id}"
+    gw_name = "${aviatrix_gateway.test_gw.elb_name}"
+    user_name = "tfu-%s"
+    user_email = "user@xyz.com"
 }
 
 `, rName, os.Getenv("AWS_ACCOUNT_NUMBER"), os.Getenv("AWS_ACCESS_KEY"), os.Getenv("AWS_SECRET_KEY"),

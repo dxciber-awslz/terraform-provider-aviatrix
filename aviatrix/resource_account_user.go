@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/AviatrixSystems/go-aviatrix/goaviatrix"
 	"github.com/hashicorp/terraform/helper/schema"
+	"github.com/terraform-providers/terraform-provider-aviatrix/goaviatrix"
 )
 
 func resourceAccountUser() *schema.Resource {
@@ -14,36 +14,32 @@ func resourceAccountUser() *schema.Resource {
 		Read:   resourceAccountUserRead,
 		Update: resourceAccountUserUpdate,
 		Delete: resourceAccountUserDelete,
+		Importer: &schema.ResourceImporter{
+			State: schema.ImportStatePassthrough,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"account_name": {
-				Type:     schema.TypeString,
-				Required: true,
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "Cloud account name of user to be created.",
 			},
 			"password": {
-				Type:      schema.TypeString,
-				Optional:  true,
-				Sensitive: true,
+				Type:        schema.TypeString,
+				Required:    true,
+				Sensitive:   true,
+				ForceNew:    true,
+				Description: "Login password for the account user to be created.",
 			},
 			"email": {
-				Type:     schema.TypeString,
-				Optional: true,
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "Email of address of account user to be created.",
 			},
 			"username": {
-				Type:     schema.TypeString,
-				Required: true,
-			},
-			"old_password": {
-				Type:     schema.TypeString,
-				Optional: true,
-			},
-			"new_password": {
-				Type:     schema.TypeString,
-				Optional: true,
-			},
-			"what": {
-				Type:     schema.TypeString,
-				Optional: true,
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "Name of account user to be created.",
 			},
 		},
 	}
@@ -59,24 +55,7 @@ func resourceAccountUserCreate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	log.Printf("[INFO] Creating Aviatrix account user: %#v", user)
-	var err error
-	if user.UserName == "admin" {
-		// if we are "creating" the admin user then assume the
-		// password is being set
-		usere := &goaviatrix.AccountUserEdit{
-			AccountName: d.Get("account_name").(string),
-			UserName:    d.Get("username").(string),
-			What:        d.Get("what").(string),
-			OldPassword: d.Get("old_password").(string),
-			NewPassword: d.Get("new_password").(string),
-		}
-		if usere.OldPassword == "" || usere.NewPassword == "" {
-			return fmt.Errorf("new and old password required")
-		}
-		err = client.UpdateAccountUserObject(usere)
-	} else {
-		err = client.CreateAccountUser(user)
-	}
+	err := client.CreateAccountUser(user)
 	if err != nil {
 		return fmt.Errorf("failed to create Aviatrix Account User: %s", err)
 	}
@@ -87,6 +66,17 @@ func resourceAccountUserCreate(d *schema.ResourceData, meta interface{}) error {
 
 func resourceAccountUserRead(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*goaviatrix.Client)
+
+	userName := d.Get("username").(string)
+	accountName := d.Get("account_name").(string)
+
+	if userName == "" || accountName == "" {
+		id := d.Id()
+		log.Printf("[DEBUG] Looks like an import, no gateway name received. Import Id is %s", id)
+		d.Set("username", id)
+		d.SetId(id)
+	}
+
 	user := &goaviatrix.AccountUser{
 		AccountName: d.Get("account_name").(string),
 		UserName:    d.Get("username").(string),
@@ -114,31 +104,30 @@ func resourceAccountUserUpdate(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*goaviatrix.Client)
 	user := &goaviatrix.AccountUserEdit{
 		AccountName: d.Get("account_name").(string),
+		Email:       d.Get("email").(string),
 		UserName:    d.Get("username").(string),
-		What:        d.Get("what").(string),
-		OldPassword: d.Get("old_password").(string),
-		NewPassword: d.Get("new_password").(string),
 	}
 	d.Partial(true)
 	log.Printf("[INFO] Updating Aviatrix account user: %#v", user)
-	if d.Get("what").(string) == "account_name" {
-		err := client.UpdateAccountUserObject(user)
-		if err != nil {
-			return fmt.Errorf("failed to update Aviatrix Account User: %s", err)
+	if d.HasChange("username") {
+		return fmt.Errorf("update username is not allowed")
+	}
+	if d.HasChange("account_name") {
+		return fmt.Errorf("change account name for an existing user is not allowed")
+	}
+	if d.HasChange("email") {
+		_, n := d.GetChange("email")
+		if n == nil {
+			return fmt.Errorf("failed to updater Aviatrix Account User: email is required")
 		}
-		d.SetPartial("account_name")
-	} else if d.Get("what").(string) == "email" {
-		err := client.UpdateAccountUserObject(user)
-		if err != nil {
-			return fmt.Errorf("failed to update Aviatrix Account User: %s", err)
-		}
-		d.SetPartial("email")
-	} else if d.Get("what").(string) == "password" {
+		user.Email = n.(string)
+		user.What = "email"
 		err := client.UpdateAccountUserObject(user)
 		if err != nil {
 			return fmt.Errorf("failed to update Aviatrix Account User: %s", err)
 		}
 	}
+
 	d.Partial(false)
 	return nil
 }

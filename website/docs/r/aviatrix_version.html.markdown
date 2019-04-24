@@ -15,7 +15,14 @@ The AviatrixVersion resource manages the controller upgrade process
 ```hcl
 # Manage Aviatrix Controller Upgrade process
 resource "aviatrix_version" "test_version" {
-  version = "3.5"
+  target_version = "latest"
+}
+```
+
+```hcl
+# Manage Aviatrix Controller Upgrade process
+resource "aviatrix_version" "test_version" {
+  target_version = "4.1"
 }
 ```
 
@@ -23,4 +30,17 @@ resource "aviatrix_version" "test_version" {
 
 The following arguments are supported:
 
-* `version` - (Optional) The release version number to which the controller will be upgraded to. If not specified, it automatically will be upgraded to the latest release. Please look at https://docs.aviatrix.com/HowTos/inline_upgrade.html for more information.
+* `target_version` - (Optional) The release version number to which the controller will be upgraded to. If not specified, controller will not be upgraded. If set to "latest", controller will be upgraded to the latest release. Please look at https://docs.aviatrix.com/HowTos/inline_upgrade.html for more information.
+
+
+The following arguments are computed - please do not edit in the resource file:
+
+* `version` - Current version of the controller.
+
+## Import
+
+Instance version can be imported using the target_version, e.g.
+
+```
+$ terraform import aviatrix_version.test target_version
+```

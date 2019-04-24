@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -19,6 +21,7 @@ type AWSTgw struct {
 	AwsSideAsNumber           string               `form:"aws_side_asn,omitempty"`
 	AttachedAviatrixTransitGW []string             `form:"attached_aviatrix_transit_gateway,omitempty"`
 	SecurityDomains           []SecurityDomainRule `form:"security_domains,omitempty"`
+	ManageVpcAttachment       string
 }
 
 type AWSTgwAPIResp struct {
@@ -82,34 +85,63 @@ type VPCInfo struct {
 	VPCId       string `json:"vpc_id,omitempty"`
 }
 
+type TGWInfoResp struct {
+	Return  bool        `json:"return"`
+	Results TGWInfoList `json:"results"`
+	Reason  string      `json:"reason"`
+}
+
+type TGWInfoList struct {
+	TgwInfo TgwInfoDetail `json:"tgw_info"`
+	TgwID   string        `json:"_id"`
+	Name    string        `json:"name"`
+}
+
+type TgwInfoDetail struct {
+	AccountName     string `json:"acct_name"`
+	Region          string `json:"region"`
+	AwsSideAsNumber int    `json:"tgw_aws_asn"`
+}
+
+type listAttachedVpcNamesResp struct {
+	Return  bool     `json:"return"`
+	Results []string `json:"results"`
+	Reason  string   `json:"reason"`
+}
+
 func (c *Client) CreateAWSTgw(awsTgw *AWSTgw) error {
 	awsTgw.CID = c.CID
 	awsTgw.Action = "add_aws_tgw"
 	resp, err := c.Post(c.baseURL, awsTgw)
 	if err != nil {
-		return err
+		return errors.New("HTTP Post add_aws_tgw failed: " + err.Error())
 	}
 
 	var data APIResp
 	if err = json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return err
+		return errors.New("Json Decode add_aws_tgw failed: " + err.Error())
 	}
 	if !data.Return {
-		return errors.New(data.Reason)
+		return errors.New("Rest API add_aws_tgw Post failed: " + data.Reason)
 	}
 
 	return nil
 }
 
 func (c *Client) GetAWSTgw(awsTgw *AWSTgw) (*AWSTgw, error) {
-	awsTgw.CID = c.CID
-	path := c.baseURL + fmt.Sprintf("?action=list_route_domain_names&tgw_name=%s&CID=%s", awsTgw.Name,
-		awsTgw.CID)
-
-	resp, err := c.Get(path, nil)
+	Url, err := url.Parse(c.baseURL)
+	if err != nil {
+		return nil, errors.New(("url Parsing failed for list_route_domain_names") + err.Error())
+	}
+	listRouteDomainNames := url.Values{}
+	listRouteDomainNames.Add("CID", c.CID)
+	listRouteDomainNames.Add("action", "list_route_domain_names")
+	listRouteDomainNames.Add("tgw_name", awsTgw.Name)
+	Url.RawQuery = listRouteDomainNames.Encode()
+	resp, err := c.Get(Url.String(), nil)
 
 	if err != nil {
-		return nil, err
+		return nil, errors.New("HTTP Get list_route_domain_names failed: " + err.Error())
 	}
 
 	data := AWSTgwAPIResp{
@@ -118,10 +150,10 @@ func (c *Client) GetAWSTgw(awsTgw *AWSTgw) (*AWSTgw, error) {
 		Reason:  "",
 	}
 	if err = json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, err
+		return nil, errors.New("Json Decode list_route_domain_names failed: " + err.Error())
 	}
 	if !data.Return {
-		return nil, errors.New(data.Reason)
+		return nil, errors.New("Rest API list_route_domain_names Get failed: " + data.Reason)
 	}
 
 	connectedDomainList := data.Results
@@ -130,19 +162,25 @@ func (c *Client) GetAWSTgw(awsTgw *AWSTgw) (*AWSTgw, error) {
 	for i := range connectedDomainList {
 		dm := connectedDomainList[i]
 
-		path = c.baseURL + fmt.Sprintf("?action=view_route_domain_details&CID=%s&tgw_name=%s"+
-			"&route_domain_name=%s", c.CID, awsTgw.Name, dm)
-		resp, err = c.Get(path, nil)
+		viewRouteDomainDetails := url.Values{}
+		viewRouteDomainDetails.Add("CID", c.CID)
+		viewRouteDomainDetails.Add("action", "view_route_domain_details")
+		viewRouteDomainDetails.Add("tgw_name", awsTgw.Name)
+		viewRouteDomainDetails.Add("route_domain_name", dm)
+
+		Url.RawQuery = viewRouteDomainDetails.Encode()
+		resp, err := c.Get(Url.String(), nil)
+
 		if err != nil {
-			return nil, err
+			return nil, errors.New("HTTP Get view_route_domain_details failed: " + err.Error())
 		}
 
 		var data1 RouteDomainAPIResp
 		if err = json.NewDecoder(resp.Body).Decode(&data1); err != nil {
-			return nil, err
+			return nil, errors.New("Json Decode view_route_domain_details failed: " + err.Error())
 		}
 		if !data1.Return {
-			return nil, errors.New(data1.Reason)
+			return nil, errors.New("Rest API view_route_domain_details Get failed: " + data1.Reason)
 		}
 		routeDomainDetail := data1.Results
 
@@ -190,15 +228,15 @@ func (c *Client) DeleteAWSTgw(awsTgw *AWSTgw) error {
 	awsTgw.Action = "delete_aws_tgw"
 	resp, err := c.Post(c.baseURL, awsTgw)
 	if err != nil {
-		return err
+		return errors.New("HTTP Post delete_aws_tgw failed: " + err.Error())
 	}
 
 	var data APIResp
 	if err = json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return err
+		return errors.New("Json Decode delete_aws_tgw failed: " + err.Error())
 	}
 	if !data.Return {
-		return errors.New(data.Reason)
+		return errors.New("Rest API delete_aws_tgw Get failed: " + data.Reason)
 	}
 
 	return nil
@@ -321,99 +359,144 @@ func (c *Client) AttachAviatrixTransitGWToAWSTgw(awsTgw *AWSTgw, gateway *Gatewa
 		return err
 	}
 
-	path := c.baseURL + fmt.Sprintf("?action=attach_vpc_to_tgw&CID=%s&region=%s&vpc_account_name=%s&vpc_name="+
-		"%s&gateway_name=%s&tgw_account_name=%s&tgw_name=%s&route_domain_name=%s", c.CID, awsTgw.Region,
-		transitGw.AccountName, transitGw.VpcID, transitGw.GwName, awsTgw.AccountName, awsTgw.Name, SecurityDomainName)
-	resp, err := c.Get(path, nil)
+	Url, err := url.Parse(c.baseURL)
 	if err != nil {
-		return err
+		return errors.New(("url Parsing failed for attach_vpc_to_tgw") + err.Error())
+	}
+	attachVpcToTgw := url.Values{}
+	attachVpcToTgw.Add("CID", c.CID)
+	attachVpcToTgw.Add("action", "attach_vpc_to_tgw")
+	attachVpcToTgw.Add("region", awsTgw.Region)
+	attachVpcToTgw.Add("vpc_account_name", transitGw.AccountName)
+	attachVpcToTgw.Add("vpc_name", transitGw.VpcID)
+	attachVpcToTgw.Add("gateway_name", transitGw.GwName)
+	attachVpcToTgw.Add("tgw_account_name", awsTgw.AccountName)
+	attachVpcToTgw.Add("tgw_name", awsTgw.Name)
+	attachVpcToTgw.Add("route_domain_name", SecurityDomainName)
+	Url.RawQuery = attachVpcToTgw.Encode()
+	resp, err := c.Get(Url.String(), nil)
+
+	if err != nil {
+		return errors.New("HTTP Get attach_vpc_to_tgw failed: " + err.Error())
 	}
 
 	var data APIResp
 	if err = json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return err
+		return errors.New("Json Decode attach_vpc_to_tgw failed: " + err.Error())
 	}
 	if !data.Return {
-		return errors.New(data.Reason)
+		return errors.New("Rest API attach_vpc_to_tgw Get failed: " + data.Reason)
 	}
 
 	return nil
 }
 
-func (c *Client) DetachAviatrixTransitGWToAWSTgw(awsTgw *AWSTgw, gateway *Gateway, SecurityDomainName string) error {
+func (c *Client) DetachAviatrixTransitGWFromAWSTgw(awsTgw *AWSTgw, gateway *Gateway, SecurityDomainName string) error {
 	transitGw, err := c.GetGateway(gateway)
 
 	if err != nil {
 		return err
 	}
-	path := c.baseURL + fmt.Sprintf("?action=detach_vpc_from_tgw&CID=%s&tgw_name=%s&vpc_name=%s", c.CID,
-		awsTgw.Name, transitGw.VpcID)
 
-	resp, err := c.Get(path, nil)
+	Url, err := url.Parse(c.baseURL)
+	if err != nil {
+		return errors.New(("url Parsing failed for detach_vpc_from_tgw") + err.Error())
+	}
+	detachVpcFromTgw := url.Values{}
+	detachVpcFromTgw.Add("CID", c.CID)
+	detachVpcFromTgw.Add("action", "detach_vpc_from_tgw")
+	detachVpcFromTgw.Add("tgw_name", awsTgw.Name)
+	detachVpcFromTgw.Add("vpc_name", transitGw.VpcID)
+	Url.RawQuery = detachVpcFromTgw.Encode()
+	resp, err := c.Get(Url.String(), nil)
 
 	if err != nil {
-		return err
+		return errors.New("HTTP Get detach_vpc_from_tgw failed: " + err.Error())
 	}
 
 	var data APIResp
 	if err = json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return err
+		return errors.New("Json Decode detach_vpc_from_tgw failed: " + err.Error())
 	}
 	if !data.Return {
-		return errors.New(data.Reason)
+		return errors.New("Rest API detach_vpc_from_tgw Get failed: " + data.Reason)
 	}
 
 	return nil
 }
 
 func (c *Client) AttachVpcToAWSTgw(awsTgw *AWSTgw, vpcSolo VPCSolo, SecurityDomainName string) error {
-	path := c.baseURL + fmt.Sprintf("?action=attach_vpc_to_tgw&region=%s&vpc_account_name=%s&vpc_name=%s"+
-		"&tgw_name=%s&route_domain_name=%s&CID=%s", awsTgw.Region, vpcSolo.AccountName, vpcSolo.VpcID, awsTgw.Name,
-		SecurityDomainName, c.CID)
-
-	resp, err := c.Get(path, nil)
+	Url, err := url.Parse(c.baseURL)
+	if err != nil {
+		return errors.New(("url Parsing failed for attach_vpc_to_tgw") + err.Error())
+	}
+	attachVpcFromTgw := url.Values{}
+	attachVpcFromTgw.Add("CID", c.CID)
+	attachVpcFromTgw.Add("action", "attach_vpc_to_tgw")
+	attachVpcFromTgw.Add("region", awsTgw.Region)
+	attachVpcFromTgw.Add("vpc_account_name", vpcSolo.AccountName)
+	attachVpcFromTgw.Add("vpc_name", vpcSolo.VpcID)
+	attachVpcFromTgw.Add("tgw_name", awsTgw.Name)
+	attachVpcFromTgw.Add("route_domain_name", SecurityDomainName)
+	Url.RawQuery = attachVpcFromTgw.Encode()
+	resp, err := c.Get(Url.String(), nil)
 
 	if err != nil {
-		return err
+		return errors.New("HTTP Get attach_vpc_to_tgw failed: " + err.Error())
 	}
 
 	var data APIResp
 	if err = json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return err
+		return errors.New("Json Decode attach_vpc_to_tgw failed: " + err.Error())
 	}
 	if !data.Return {
-		return errors.New(data.Reason)
+		return errors.New("Rest API attach_vpc_to_tgw Get failed: " + data.Reason)
 	}
 
 	return nil
 }
 
 func (c *Client) DetachVpcFromAWSTgw(awsTgw *AWSTgw, vpcID string) error {
-	path := c.baseURL + fmt.Sprintf("?action=detach_vpc_from_tgw&CID=%s&tgw_name=%s&vpc_name=%s", c.CID,
-		awsTgw.Name, vpcID)
-	resp, err := c.Get(path, nil)
+	Url, err := url.Parse(c.baseURL)
+	if err != nil {
+		return errors.New(("url Parsing failed for detach_vpc_from_tgw") + err.Error())
+	}
+	detachVpcFromTgw := url.Values{}
+	detachVpcFromTgw.Add("CID", c.CID)
+	detachVpcFromTgw.Add("action", "detach_vpc_from_tgw")
+	detachVpcFromTgw.Add("tgw_name", awsTgw.Name)
+	detachVpcFromTgw.Add("vpc_name", vpcID)
+	Url.RawQuery = detachVpcFromTgw.Encode()
+	resp, err := c.Get(Url.String(), nil)
 
 	if err != nil {
-		return err
+		return errors.New("HTTP Get detach_vpc_from_tgw failed: " + err.Error())
 	}
 
 	var data APIResp
 	if err = json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return err
+		return errors.New("Json Decode detach_vpc_from_tgw failed: " + err.Error())
 	}
 	if !data.Return {
-		return errors.New(data.Reason)
+		return errors.New("Rest API detach_vpc_from_tgw Get failed: " + data.Reason)
 	}
 
 	return nil
 }
 
 func (c *Client) GetTransitGwFromVpcID(gateway *Gateway) (*Gateway, error) {
-	path := c.baseURL + fmt.Sprintf("?action=list_vpcs_summary&CID=%s", c.CID)
-	resp, err := c.Get(path, nil)
+	Url, err := url.Parse(c.baseURL)
+	if err != nil {
+		return nil, errors.New(("url Parsing failed for list_vpcs_summary") + err.Error())
+	}
+	listVPCsSummary := url.Values{}
+	listVPCsSummary.Add("CID", c.CID)
+	listVPCsSummary.Add("action", "list_vpcs_summary")
+	Url.RawQuery = listVPCsSummary.Encode()
+	resp, err := c.Get(Url.String(), nil)
 
 	if err != nil {
-		return nil, err
+		return nil, errors.New("HTTP Get list_vpcs_summary failed: " + err.Error())
 	}
 
 	data := VPCList{
@@ -423,10 +506,10 @@ func (c *Client) GetTransitGwFromVpcID(gateway *Gateway) (*Gateway, error) {
 	}
 
 	if err = json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, err
+		return nil, errors.New("Json Decode list_vpcs_summary failed: " + err.Error())
 	}
 	if !data.Return {
-		return nil, errors.New(data.Reason)
+		return nil, errors.New("Rest API list_vpcs_summary Get failed: " + data.Reason)
 	}
 
 	vpcLists := data.Results
@@ -445,4 +528,81 @@ func (c *Client) GetTransitGwFromVpcID(gateway *Gateway) (*Gateway, error) {
 	}
 	log.Printf("Couldn't find transit gateway attached to vpc %s", gateway.VpcID)
 	return nil, ErrNotFound
+}
+
+func (c *Client) ListTgwDetails(awsTgw *AWSTgw) (*AWSTgw, error) {
+	Url, err := url.Parse(c.baseURL)
+	if err != nil {
+		return nil, errors.New(("url Parsing failed for list_tgw_details") + err.Error())
+	}
+	listTgwDetails := url.Values{}
+	listTgwDetails.Add("CID", c.CID)
+	listTgwDetails.Add("action", "list_tgw_details")
+	listTgwDetails.Add("tgw_name", awsTgw.Name)
+
+	Url.RawQuery = listTgwDetails.Encode()
+	resp, err := c.Get(Url.String(), nil)
+
+	if err != nil {
+		return nil, errors.New("HTTP Get list_tgw_details failed: " + err.Error())
+	}
+
+	var data TGWInfoResp
+	if err = json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, errors.New("Json Decode list_tgw_details failed: " + err.Error())
+	}
+	if !data.Return {
+		return nil, errors.New("Rest API list_tgw_details Get failed: " + data.Reason)
+	}
+
+	tgwInfoList := data.Results
+	if tgwInfoList.Name == awsTgw.Name {
+		tgwInfoDetail := tgwInfoList.TgwInfo
+		awsTgw.AccountName = tgwInfoDetail.AccountName
+		awsTgw.Region = tgwInfoDetail.Region
+		awsTgw.AwsSideAsNumber = strconv.Itoa(tgwInfoDetail.AwsSideAsNumber)
+		return awsTgw, nil
+	}
+
+	return nil, ErrNotFound
+}
+
+func (c *Client) IsVpcAttachedToTgw(awsTgw *AWSTgw, vpcSolo *VPCSolo) (bool, error) {
+	Url, err := url.Parse(c.baseURL)
+	if err != nil {
+		return false, errors.New(("url Parsing failed for list_attached_vpc_names_to_route_domain") + err.Error())
+	}
+	listAttachedVpcNames := url.Values{}
+	listAttachedVpcNames.Add("CID", c.CID)
+	listAttachedVpcNames.Add("action", "list_attached_vpc_names_to_route_domain")
+	listAttachedVpcNames.Add("tgw_name", awsTgw.Name)
+
+	Url.RawQuery = listAttachedVpcNames.Encode()
+	resp, err := c.Get(Url.String(), nil)
+
+	if err != nil {
+		return false, errors.New("HTTP Get list_attached_vpc_names_to_route_domain failed: " + err.Error())
+	}
+
+	data := listAttachedVpcNamesResp{
+		Return:  false,
+		Results: make([]string, 0),
+		Reason:  "",
+	}
+	if err = json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return false, errors.New("Json Decode list_attached_vpc_names_to_route_domain failed: " + err.Error())
+	}
+	if !data.Return {
+		return false, errors.New("Rest API list_attached_vpc_names_to_route_domain Get failed: " + data.Reason)
+	}
+
+	attachedVpcNames := data.Results
+
+	for i := range attachedVpcNames {
+		if strings.Split(attachedVpcNames[i], "~~")[0] == vpcSolo.VpcID {
+			return true, nil
+		}
+	}
+
+	return false, ErrNotFound
 }

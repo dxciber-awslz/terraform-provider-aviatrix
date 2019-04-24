@@ -3,9 +3,10 @@ package aviatrix
 import (
 	"fmt"
 	"log"
+	"strings"
 
-	"github.com/AviatrixSystems/go-aviatrix/goaviatrix"
 	"github.com/hashicorp/terraform/helper/schema"
+	"github.com/terraform-providers/terraform-provider-aviatrix/goaviatrix"
 )
 
 func resourceTunnel() *schema.Resource {
@@ -14,41 +15,50 @@ func resourceTunnel() *schema.Resource {
 		Read:   resourceTunnelRead,
 		Update: resourceTunnelUpdate,
 		Delete: resourceTunnelDelete,
+		Importer: &schema.ResourceImporter{
+			State: schema.ImportStatePassthrough,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"vpc_name1": {
-				Type:     schema.TypeString,
-				Required: true,
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "The first VPC Container name to make a peer pair.",
 			},
 			"vpc_name2": {
-				Type:     schema.TypeString,
-				Required: true,
-			},
-			"over_aws_peering": {
-				Type:     schema.TypeString,
-				Optional: true,
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "The second VPC Container name to make a peer pair.",
 			},
 			"peering_state": {
-				Type:     schema.TypeString,
-				Optional: true,
-				Computed: true,
+				Type:        schema.TypeString,
+				Optional:    true,
+				Computed:    true,
+				Description: "Status of the tunnel.",
 			},
 			"peering_hastatus": {
-				Type:     schema.TypeString,
-				Optional: true,
+				Type:        schema.TypeString,
+				Optional:    true,
+				Computed:    true,
+				Description: "Status of the HA tunnel.",
 			},
 			"cluster": {
-				Type:     schema.TypeString,
-				Optional: true,
+				Type:        schema.TypeString,
+				Optional:    true,
+				Computed:    true,
+				Description: "Whether cluster peering is enabled. Valid inputs: 'yes' and 'no'.",
 			},
 			"peering_link": {
-				Type:     schema.TypeString,
-				Optional: true,
-				Computed: true,
+				Type:        schema.TypeString,
+				Optional:    true,
+				Computed:    true,
+				Description: "Name of the peering link.",
 			},
 			"enable_ha": {
-				Type:     schema.TypeString,
-				Optional: true,
+				Type:        schema.TypeString,
+				Optional:    true,
+				Default:     "no",
+				Description: "Whether Peering HA is enabled. Valid inputs: 'yes' and 'no'.",
 			},
 			//FIXME : Some of the above are computed. Set them correctly. Boolean valus should not be Optional to
 			// prevent tf state corruption
@@ -61,26 +71,39 @@ func resourceTunnelCreate(d *schema.ResourceData, meta interface{}) error {
 	tunnel := &goaviatrix.Tunnel{
 		VpcName1:        d.Get("vpc_name1").(string),
 		VpcName2:        d.Get("vpc_name2").(string),
-		OverAwsPeering:  d.Get("over_aws_peering").(string),
 		PeeringState:    d.Get("peering_state").(string),
 		PeeringHaStatus: d.Get("peering_hastatus").(string),
 		Cluster:         d.Get("cluster").(string),
 		PeeringLink:     d.Get("peering_link").(string),
 		EnableHA:        d.Get("enable_ha").(string),
 	}
-
+	if tunnel.EnableHA != "" && tunnel.EnableHA != "yes" && tunnel.EnableHA != "no" {
+		return fmt.Errorf("enable_ha can only be empty string, 'yes', or 'no'")
+	}
 	log.Printf("[INFO] Creating Aviatrix tunnel: %#v", tunnel)
 
 	err := client.CreateTunnel(tunnel)
 	if err != nil {
 		return fmt.Errorf("failed to create Aviatrix Tunnel: %s", err)
 	}
-	d.SetId(tunnel.VpcName1 + "<->" + tunnel.VpcName2)
+	d.SetId(tunnel.VpcName1 + "~" + tunnel.VpcName2)
 	return resourceTunnelRead(d, meta)
 }
 
 func resourceTunnelRead(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*goaviatrix.Client)
+
+	vpcName1 := d.Get("vpc_name1").(string)
+	vpcName2 := d.Get("vpc_name2").(string)
+
+	if vpcName1 == "" || vpcName2 == "" {
+		id := d.Id()
+		log.Printf("[DEBUG] Looks like an import, no vpc names received. Import Id is %s", id)
+		d.Set("vpc_name1", strings.Split(id, "~")[0])
+		d.Set("vpc_name2", strings.Split(id, "~")[1])
+		d.SetId(id)
+	}
+
 	tunnel := &goaviatrix.Tunnel{
 		VpcName1: d.Get("vpc_name1").(string),
 		VpcName2: d.Get("vpc_name2").(string),
@@ -95,19 +118,16 @@ func resourceTunnelRead(d *schema.ResourceData, meta interface{}) error {
 	}
 	log.Printf("[INFO] Found Aviatrix tunnel: %#v", tun)
 
-	if d.Get("cluster") != "" {
-		d.Set("cluster", tun.Cluster)
-	}
-	if d.Get("over_aws_peering") != "" {
-		d.Set("over_aws_peering", tun.OverAwsPeering)
-	}
-	if d.Get("peering_hastatus") != "" {
-		d.Set("peering_hastatus", tun.PeeringHaStatus)
-	}
+	d.Set("cluster", tun.Cluster)
+	d.Set("peering_hastatus", tun.PeeringHaStatus)
 	d.Set("peering_state", tun.PeeringState)
-
 	d.Set("peering_link", tun.PeeringLink)
-	d.SetId(tun.VpcName1 + "<->" + tun.VpcName2)
+	if tun.PeeringHaStatus == "active" {
+		d.Set("enable_ha", "yes")
+	} else {
+		d.Set("enable_ha", "no")
+	}
+	d.SetId(tun.VpcName1 + "~" + tun.VpcName2)
 	log.Printf("[INFO] Found tunnel: %#v", d)
 	return nil
 }
@@ -117,7 +137,6 @@ func resourceTunnelUpdate(d *schema.ResourceData, meta interface{}) error {
 	tunnel := &goaviatrix.Tunnel{
 		VpcName1:        d.Get("vpc_name1").(string),
 		VpcName2:        d.Get("vpc_name2").(string),
-		OverAwsPeering:  d.Get("over_aws_peering").(string),
 		PeeringState:    d.Get("peering_state").(string),
 		PeeringHaStatus: d.Get("peering_hastatus").(string),
 		Cluster:         d.Get("cluster").(string),
@@ -130,7 +149,7 @@ func resourceTunnelUpdate(d *schema.ResourceData, meta interface{}) error {
 	if err != nil {
 		return fmt.Errorf("failed to update Aviatrix Tunnel: %s", err)
 	}
-	d.SetId(tunnel.VpcName1 + "<->" + tunnel.VpcName2)
+	d.SetId(tunnel.VpcName1 + "~" + tunnel.VpcName2)
 	return resourceTunnelRead(d, meta)
 }
 
@@ -143,7 +162,7 @@ func resourceTunnelDelete(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	log.Printf("[INFO] Deleting Aviatrix tunnel: %#v", tunnel)
-	if enableHA := d.Get("enable_ha").(string); enableHA == "yes" {
+	if peeringHaStatus := d.Get("peering_hastatus").(string); peeringHaStatus == "active" {
 		// parse the hagw name
 		tunnel.VpcName1 += "-hagw"
 		tunnel.VpcName2 += "-hagw"
@@ -151,8 +170,8 @@ func resourceTunnelDelete(d *schema.ResourceData, meta interface{}) error {
 		if err != nil {
 			return fmt.Errorf("failed to delete Aviatrix HA gateway: %s", err)
 		}
-
 	}
+
 	tunnel.VpcName1 = d.Get("vpc_name1").(string)
 	tunnel.VpcName2 = d.Get("vpc_name2").(string)
 	err := client.DeleteTunnel(tunnel)
